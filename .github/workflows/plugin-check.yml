@@ -22,15 +22,19 @@ jobs:
         # the same file set as the distributed ZIP -- without it the checker
         # reports on .gitignore, .gitattributes, phpcs.xml.dist and .github/,
         # none of which are part of the plugin.
+        #
+        # The directory must be named for the slug: Plugin Check derives the
+        # expected text domain from its basename, so extracting into a plain
+        # "build" directory makes every translation call look mismatched.
         run: |
-          mkdir -p build
-          git archive --format=tar HEAD | tar -x -C build
+          mkdir -p build/maxsoft-restrict-pdf-access
+          git archive --format=tar HEAD | tar -x -C build/maxsoft-restrict-pdf-access
           echo "Files under test:"
           find build -type f | sort
 
       - name: Run Plugin Check
         uses: wordpress/plugin-check-action@v1
         with:
-          build-dir: ./build
+          build-dir: ./build/maxsoft-restrict-pdf-access
           ignore-warnings: false
           ignore-errors: false
