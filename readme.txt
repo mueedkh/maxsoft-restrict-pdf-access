@@ -4,7 +4,7 @@ Tags: pdf, restrict, login, members, protection
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.1
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -156,6 +156,24 @@ and deleting the plugin also removes its saved settings.
 
 == Changelog ==
 
+= 1.3.0 =
+* Fix: on sites where the uploads base URL does not share a scheme or host
+  with the site address -- behind a TLS-terminating proxy, or with a CDN or
+  offload plugin rewriting upload URLs -- the uploads path was derived by
+  subtracting one URL string from the other. When that did not match, a whole
+  URL was written into the rewrite rule and the media-library protection
+  silently did nothing, while the PDF.js viewer rule kept working. The path is
+  now parsed properly.
+* New: a Status section on the settings screen showing the detected uploads
+  path, the rules actually present in `.htaccess`, and a warning when they do
+  not match your settings.
+* New: `maxsoft_rpdf_uploads_path` filter, for setups where the path still
+  cannot be detected.
+* Fix: the file stream counted requested bytes rather than bytes actually
+  read, so a short read could end a download before `Content-Length` was met.
+* Hardening: the uploads path is checked against a safe character set before
+  being written into `.htaccess`.
+
 = 1.2.1 =
 * Fix: clearing an `.htaccess` block that was not there added an empty one,
   because insert_with_markers() appends the markers when it cannot find them.
@@ -197,6 +215,11 @@ and deleting the plugin also removes its saved settings.
   configurable redirect target.
 
 == Upgrade Notice ==
+
+= 1.3.0 =
+Fixes media-library PDFs being left unprotected on sites where the uploads URL
+does not match the site address. Check the new Status section on the settings
+screen after updating.
 
 = 1.2.1 =
 Fixes an empty `.htaccess` block being written in two cases, and clears the

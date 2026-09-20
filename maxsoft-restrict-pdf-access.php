@@ -3,7 +3,7 @@
  * Plugin Name:       MaXsoft Restrict PDF Access
  * Plugin URI:        https://github.com/mueedkh/maxsoft-restrict-pdf-access
  * Description:       Restrict media-library PDF files to logged-in users, and optionally the PDF.js Viewer full-screen URL. Blocked visitors are sent to a page you choose.
- * Version:           1.2.1
+ * Version:           1.3.0
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            MaXsoft Technologies
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // No direct access.
 }
 
-define( 'MAXSOFT_RPDF_VERSION', '1.2.1' );
+define( 'MAXSOFT_RPDF_VERSION', '1.3.0' );
 define( 'MAXSOFT_RPDF_FILE', __FILE__ );
 define( 'MAXSOFT_RPDF_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MAXSOFT_RPDF_OPTION', 'maxsoft_rpdf_settings' );
@@ -177,10 +177,19 @@ function maxsoft_rpdf_htaccess_rules() {
 	}
 
 	$home_url      = home_url();
-	$upload        = wp_upload_dir();
-	$uploads_rel   = ltrim( str_replace( $home_url, '', $upload['baseurl'] ), '/' );
+	$uploads_rel   = maxsoft_rpdf_uploads_path();
 	$home_path_uri = rtrim( (string) wp_parse_url( $home_url, PHP_URL_PATH ), '/' );
 	$index         = $home_path_uri . '/index.php';
+
+	// Without a usable uploads path the media rule would be nonsense, so drop
+	// it rather than write a rule that silently matches nothing.
+	if ( '' === $uploads_rel ) {
+		$do_media = false;
+
+		if ( ! $do_viewer ) {
+			return array();
+		}
+	}
 
 	$rules   = array();
 	$rules[] = '<IfModule mod_rewrite.c>';
@@ -208,6 +217,54 @@ function maxsoft_rpdf_htaccess_rules() {
 	$rules[] = '</IfModule>';
 
 	return $rules;
+}
+
+/**
+ * The uploads directory as a root-relative path, for use in a RewriteRule.
+ *
+ * Derived by parsing the path out of both URLs rather than subtracting one
+ * string from the other. The uploads base URL does not always share a scheme
+ * or host with home_url() -- a site behind a TLS-terminating proxy, or one
+ * using a CDN or offload plugin that rewrites upload URLs, can differ in
+ * either. Subtracting the strings then leaves a whole URL behind and produces
+ * a rule that cannot match any request.
+ *
+ * @return string Path with no leading or trailing slash, e.g.
+ *                "wp-content/uploads". Empty if it cannot be determined.
+ */
+function maxsoft_rpdf_uploads_path() {
+	$upload = wp_upload_dir();
+
+	if ( empty( $upload['baseurl'] ) ) {
+		return '';
+	}
+
+	$uploads_path = trim( (string) wp_parse_url( $upload['baseurl'], PHP_URL_PATH ), '/' );
+	$home_path    = trim( (string) wp_parse_url( home_url(), PHP_URL_PATH ), '/' );
+
+	// On a subdirectory install both paths carry the same prefix, and the
+	// RewriteRule is relative to that directory, so take the prefix off.
+	if ( '' !== $home_path && 0 === strpos( $uploads_path . '/', $home_path . '/' ) ) {
+		$uploads_path = trim( substr( $uploads_path, strlen( $home_path ) ), '/' );
+	}
+
+	/**
+	 * Filter the uploads path used in the rewrite rule.
+	 *
+	 * A last resort for setups where it cannot be derived automatically.
+	 *
+	 * @param string $uploads_path Root-relative path, no surrounding slashes.
+	 */
+	$uploads_path = (string) apply_filters( 'maxsoft_rpdf_uploads_path', $uploads_path );
+
+	// This value is written into an .htaccess directive, so keep it to
+	// characters that can appear in a directory path. Anything else -- a
+	// newline above all -- could inject a further directive into the file.
+	if ( ! preg_match( '#^[A-Za-z0-9._/-]*$#', $uploads_path ) || false !== strpos( $uploads_path, '..' ) ) {
+		return '';
+	}
+
+	return $uploads_path;
 }
 
 /**
@@ -259,6 +316,46 @@ function maxsoft_rpdf_update_htaccess() {
 	update_option( 'maxsoft_rpdf_htaccess_ok', $written ? 1 : 0 );
 
 	return $written;
+}
+
+/**
+ * The rules currently sitting inside our .htaccess block.
+ *
+ * @return string[] Lines between the markers; empty if the block is absent.
+ */
+function maxsoft_rpdf_htaccess_live_rules() {
+	if ( ! function_exists( 'extract_from_markers' ) ) {
+		require_once ABSPATH . 'wp-admin/includes/misc.php';
+	}
+
+	return (array) extract_from_markers( maxsoft_rpdf_htaccess_path(), MAXSOFT_RPDF_MARKER );
+}
+
+/**
+ * Compare two rule sets, ignoring blank lines, comments and indentation.
+ *
+ * @param string[] $expected Rules the current settings call for.
+ * @param string[] $live     Rules found in the file.
+ * @return bool
+ */
+function maxsoft_rpdf_rules_match( $expected, $live ) {
+	$strip = static function ( $lines ) {
+		$out = array();
+
+		foreach ( (array) $lines as $line ) {
+			$line = trim( (string) $line );
+
+			if ( '' === $line || 0 === strpos( $line, '#' ) ) {
+				continue;
+			}
+
+			$out[] = $line;
+		}
+
+		return $out;
+	};
+
+	return $strip( $expected ) === $strip( $live );
 }
 
 /**
@@ -581,9 +678,18 @@ function maxsoft_rpdf_stream_file( $path ) {
 
 	while ( $remaining > 0 && ! feof( $fp ) ) {
 		$read = ( $remaining > $chunk ) ? $chunk : $remaining;
-		echo fread( $fp, $read ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- raw binary file stream.
+		$data = fread( $fp, $read );
+
+		// A short read is legal, so count what actually came back. Counting
+		// the requested size instead would end the loop early and send fewer
+		// bytes than the Content-Length promised.
+		if ( false === $data || '' === $data ) {
+			break;
+		}
+
+		echo $data; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- raw binary file stream.
 		flush();
-		$remaining -= $read;
+		$remaining -= strlen( $data );
 	}
 
 	fclose( $fp );
@@ -717,6 +823,66 @@ function maxsoft_rpdf_settings_page() {
 				</p>
 			</div>
 		<?php endif; ?>
+
+		<?php
+		$uploads_rel = maxsoft_rpdf_uploads_path();
+		$expected    = maxsoft_rpdf_htaccess_rules();
+		$live        = maxsoft_rpdf_htaccess_live_rules();
+		$in_sync     = maxsoft_rpdf_rules_match( $expected, $live );
+		?>
+
+		<h2><?php esc_html_e( 'Status', 'maxsoft-restrict-pdf-access' ); ?></h2>
+
+		<?php if ( '' === $uploads_rel ) : ?>
+			<div class="notice notice-error">
+				<p>
+					<strong><?php esc_html_e( 'The uploads folder could not be located.', 'maxsoft-restrict-pdf-access' ); ?></strong>
+					<?php esc_html_e( 'Media-library PDFs cannot be protected until this is resolved. Use the maxsoft_rpdf_uploads_path filter to set the path manually.', 'maxsoft-restrict-pdf-access' ); ?>
+				</p>
+			</div>
+		<?php elseif ( ! $in_sync ) : ?>
+			<div class="notice notice-error">
+				<p>
+					<strong><?php esc_html_e( 'The rules in .htaccess do not match your settings.', 'maxsoft-restrict-pdf-access' ); ?></strong>
+					<?php esc_html_e( 'Your PDFs may not be protected. Press "Save Changes" below to rewrite them, or paste the expected rules in manually if the file is not writable.', 'maxsoft-restrict-pdf-access' ); ?>
+				</p>
+			</div>
+		<?php endif; ?>
+
+		<table class="form-table" role="presentation">
+			<tr>
+				<th scope="row"><?php esc_html_e( 'Uploads path detected', 'maxsoft-restrict-pdf-access' ); ?></th>
+				<td>
+					<?php if ( '' === $uploads_rel ) : ?>
+						<strong style="color:#b32d2e;"><?php esc_html_e( 'Not detected', 'maxsoft-restrict-pdf-access' ); ?></strong>
+					<?php else : ?>
+						<code><?php echo esc_html( '/' . $uploads_rel . '/' ); ?></code>
+					<?php endif; ?>
+					<p class="description"><?php esc_html_e( 'Direct PDF links below this path are the ones the media rule protects.', 'maxsoft-restrict-pdf-access' ); ?></p>
+				</td>
+			</tr>
+			<tr>
+				<th scope="row"><?php esc_html_e( 'Rules currently in .htaccess', 'maxsoft-restrict-pdf-access' ); ?></th>
+				<td>
+					<?php if ( empty( $live ) ) : ?>
+						<strong style="color:#b32d2e;"><?php esc_html_e( 'No rules found.', 'maxsoft-restrict-pdf-access' ); ?></strong>
+					<?php else : ?>
+						<textarea readonly rows="<?php echo esc_attr( min( 16, count( $live ) + 1 ) ); ?>" class="large-text code"><?php echo esc_textarea( implode( "\n", $live ) ); ?></textarea>
+					<?php endif; ?>
+				</td>
+			</tr>
+			<?php if ( ! $in_sync && ! empty( $expected ) ) : ?>
+				<tr>
+					<th scope="row"><?php esc_html_e( 'Rules your settings expect', 'maxsoft-restrict-pdf-access' ); ?></th>
+					<td>
+						<textarea readonly rows="<?php echo esc_attr( min( 16, count( $expected ) + 1 ) ); ?>" class="large-text code"><?php echo esc_textarea( implode( "\n", $expected ) ); ?></textarea>
+						<p class="description"><?php esc_html_e( 'On Apache, wrap these in the BEGIN and END marker lines shown in readme.txt. On Nginx, use the equivalent from the FAQ.', 'maxsoft-restrict-pdf-access' ); ?></p>
+					</td>
+				</tr>
+			<?php endif; ?>
+		</table>
+
+		<h2><?php esc_html_e( 'Settings', 'maxsoft-restrict-pdf-access' ); ?></h2>
 
 		<form method="post" action="options.php">
 			<?php settings_fields( 'maxsoft_rpdf_settings_group' ); ?>
