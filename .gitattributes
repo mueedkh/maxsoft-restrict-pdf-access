@@ -13,3 +13,4 @@
 .gitignore      export-ignore
 .distignore     export-ignore
 phpcs.xml.dist  export-ignore
+.github/       export-ignore

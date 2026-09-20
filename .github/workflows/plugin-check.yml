@@ -1,0 +1,26 @@
+name: Plugin Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  plugin-check:
+    name: WordPress Plugin Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the plugin
+        uses: actions/checkout@v4
+
+      - name: Run Plugin Check
+        uses: wordpress/plugin-check-action@v1
+        with:
+          # Warnings we have reviewed and suppressed in the source with a
+          # documented phpcs:ignore stay suppressed; anything new should fail
+          # the build rather than accumulate.
+          ignore-warnings: false
+          ignore-errors: false
