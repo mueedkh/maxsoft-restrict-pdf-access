@@ -1,5 +1,5 @@
 === MaXsoft Restrict PDF Access ===
-Contributors: maxsofttechnologies
+Contributors: mueedkh
 Tags: pdf, restrict, login, members, protection
 Requires at least: 6.0
 Tested up to: 7.1
