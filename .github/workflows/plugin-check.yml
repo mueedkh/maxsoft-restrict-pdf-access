@@ -13,14 +13,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Check out the plugin
-        uses: actions/checkout@v4
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Assemble the release build
+        # Check the files that actually ship, not the repository. `git archive`
+        # honours the export-ignore rules in .gitattributes, so this produces
+        # the same file set as the distributed ZIP -- without it the checker
+        # reports on .gitignore, .gitattributes, phpcs.xml.dist and .github/,
+        # none of which are part of the plugin.
+        run: |
+          mkdir -p build
+          git archive --format=tar HEAD | tar -x -C build
+          echo "Files under test:"
+          find build -type f | sort
 
       - name: Run Plugin Check
         uses: wordpress/plugin-check-action@v1
         with:
-          # Warnings we have reviewed and suppressed in the source with a
-          # documented phpcs:ignore stay suppressed; anything new should fail
-          # the build rather than accumulate.
+          build-dir: ./build
           ignore-warnings: false
           ignore-errors: false
