@@ -1,0 +1,24 @@
+# Everything listed here is kept out of the plugin ZIP that ships to
+# WordPress.org. Only the runtime files belong in the release.
+
+/.git
+/.github
+/.wordpress-org
+/node_modules
+/vendor
+/build
+/dist
+
+.gitignore
+.distignore
+.editorconfig
+phpcs.xml.dist
+composer.json
+composer.lock
+package.json
+package-lock.json
+
+.DS_Store
+Thumbs.db
+*.log
+*.zip

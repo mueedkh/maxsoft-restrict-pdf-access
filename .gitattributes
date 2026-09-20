@@ -1,0 +1,13 @@
+# Normalise to LF in the repository and on checkout, so the files that ship to
+# the WordPress.org SVN repository never pick up CRLF endings.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+
+# Keep repository furniture out of the GitHub language stats and archives.
+.wordpress-org/ export-ignore
+.gitattributes  export-ignore
+.gitignore      export-ignore
+.distignore     export-ignore
