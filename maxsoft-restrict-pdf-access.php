@@ -267,9 +267,19 @@ function maxsoft_rpdf_remove_htaccess( $marker = MAXSOFT_RPDF_MARKER ) {
 
 	$htaccess = maxsoft_rpdf_htaccess_path();
 
-	if ( file_exists( $htaccess ) && is_writable( $htaccess ) ) {
-		insert_with_markers( $htaccess, $marker, array() );
+	if ( ! file_exists( $htaccess ) || ! is_writable( $htaccess ) ) {
+		return;
 	}
+
+	// insert_with_markers() APPENDS an empty "# BEGIN / # END" pair when the
+	// marker is not already in the file, so asking it to clear a block that
+	// isn't there would create one. No content between the markers means
+	// there is nothing to remove either way.
+	if ( array() === extract_from_markers( $htaccess, $marker ) ) {
+		return;
+	}
+
+	insert_with_markers( $htaccess, $marker, array() );
 }
 
 /* -------------------------------------------------------------------------

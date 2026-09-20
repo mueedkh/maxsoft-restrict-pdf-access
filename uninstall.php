@@ -31,8 +31,14 @@ if ( ! function_exists( 'insert_with_markers' ) ) {
 $maxsoft_rpdf_htaccess = get_home_path() . '.htaccess';
 
 if ( file_exists( $maxsoft_rpdf_htaccess ) && is_writable( $maxsoft_rpdf_htaccess ) ) {
-	insert_with_markers( $maxsoft_rpdf_htaccess, 'MaXsoft Restrict PDF Access', array() );
-	insert_with_markers( $maxsoft_rpdf_htaccess, 'Restrict PDF', array() );
+	foreach ( array( 'MaXsoft Restrict PDF Access', 'Restrict PDF' ) as $maxsoft_rpdf_marker ) {
+		// Deactivation normally clears the block before uninstall runs, and
+		// insert_with_markers() APPENDS an empty "# BEGIN / # END" pair when
+		// the marker is absent. Only clear a block that still has content.
+		if ( array() !== extract_from_markers( $maxsoft_rpdf_htaccess, $maxsoft_rpdf_marker ) ) {
+			insert_with_markers( $maxsoft_rpdf_htaccess, $maxsoft_rpdf_marker, array() );
+		}
+	}
 }
 
 if ( is_multisite() ) {
