@@ -6,8 +6,10 @@
 *.jpg binary
 *.gif binary
 
-# Keep repository furniture out of the GitHub language stats and archives.
+# Keep repository furniture out of archives, so `git archive` produces exactly
+# the file set that ships to WordPress.org.
 .wordpress-org/ export-ignore
 .gitattributes  export-ignore
 .gitignore      export-ignore
 .distignore     export-ignore
+phpcs.xml.dist  export-ignore
