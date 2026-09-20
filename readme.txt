@@ -4,7 +4,7 @@ Tags: pdf, restrict, login, members, protection
 Requires at least: 6.0
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -156,6 +156,16 @@ and deleting the plugin also removes its saved settings.
 
 == Changelog ==
 
+= 1.2.1 =
+* Fix: clearing an `.htaccess` block that was not there added an empty one,
+  because insert_with_markers() appends the markers when it cannot find them.
+  This affected a fresh install and uninstall after deactivation.
+* Fix: restored escaping on the page-dropdown field name.
+* Change: whether the `.htaccess` block could be written is now recorded from
+  the actual write result instead of probing file permissions, so the settings
+  screen reports a real failure rather than a guess.
+* Change: cleared the remaining WordPress Plugin Check reports.
+
 = 1.2.0 =
 * Renamed the plugin to MaXsoft Restrict PDF Access. Settings and `.htaccess`
   rules from 1.1.0 are migrated automatically on update.
@@ -187,6 +197,10 @@ and deleting the plugin also removes its saved settings.
   configurable redirect target.
 
 == Upgrade Notice ==
+
+= 1.2.1 =
+Fixes an empty `.htaccess` block being written in two cases, and clears the
+remaining Plugin Check reports.
 
 = 1.2.0 =
 The plugin has been renamed and re-prefixed. Your settings and rewrite rules

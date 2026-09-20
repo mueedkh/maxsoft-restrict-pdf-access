@@ -3,7 +3,7 @@
  * Plugin Name:       MaXsoft Restrict PDF Access
  * Plugin URI:        https://github.com/mueedkh/maxsoft-restrict-pdf-access
  * Description:       Restrict media-library PDF files to logged-in users, and optionally the PDF.js Viewer full-screen URL. Blocked visitors are sent to a page you choose.
- * Version:           1.2.0
+ * Version:           1.2.1
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            MaXsoft Technologies
@@ -19,7 +19,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // No direct access.
 }
 
-define( 'MAXSOFT_RPDF_VERSION', '1.2.0' );
+define( 'MAXSOFT_RPDF_VERSION', '1.2.1' );
 define( 'MAXSOFT_RPDF_FILE', __FILE__ );
 define( 'MAXSOFT_RPDF_DIR', plugin_dir_path( __FILE__ ) );
 define( 'MAXSOFT_RPDF_OPTION', 'maxsoft_rpdf_settings' );
@@ -223,18 +223,16 @@ function maxsoft_rpdf_htaccess_path() {
 }
 
 /**
- * Can we manage the site's .htaccess?
+ * Did the last attempt to write the .htaccess block succeed?
+ *
+ * Recorded by maxsoft_rpdf_update_htaccess() from the actual return value of
+ * insert_with_markers(), so the settings screen reports a real write failure
+ * instead of guessing from file permissions.
  *
  * @return bool
  */
-function maxsoft_rpdf_htaccess_is_writable() {
-	$htaccess = maxsoft_rpdf_htaccess_path();
-
-	if ( file_exists( $htaccess ) ) {
-		return is_writable( $htaccess );
-	}
-
-	return is_writable( dirname( $htaccess ) );
+function maxsoft_rpdf_htaccess_write_ok() {
+	return (bool) get_option( 'maxsoft_rpdf_htaccess_ok', 1 );
 }
 
 /**
@@ -247,12 +245,20 @@ function maxsoft_rpdf_update_htaccess() {
 		require_once ABSPATH . 'wp-admin/includes/misc.php';
 	}
 
-	// Only manage .htaccess where it is writable.
-	if ( ! maxsoft_rpdf_htaccess_is_writable() ) {
-		return false;
+	$rules = maxsoft_rpdf_htaccess_rules();
+
+	// Nothing to protect: take the block out rather than leaving an empty one.
+	if ( array() === $rules ) {
+		maxsoft_rpdf_remove_htaccess();
+		update_option( 'maxsoft_rpdf_htaccess_ok', 1 );
+		return true;
 	}
 
-	return insert_with_markers( maxsoft_rpdf_htaccess_path(), MAXSOFT_RPDF_MARKER, maxsoft_rpdf_htaccess_rules() );
+	$written = insert_with_markers( maxsoft_rpdf_htaccess_path(), MAXSOFT_RPDF_MARKER, $rules );
+
+	update_option( 'maxsoft_rpdf_htaccess_ok', $written ? 1 : 0 );
+
+	return $written;
 }
 
 /**
@@ -267,18 +273,16 @@ function maxsoft_rpdf_remove_htaccess( $marker = MAXSOFT_RPDF_MARKER ) {
 
 	$htaccess = maxsoft_rpdf_htaccess_path();
 
-	if ( ! file_exists( $htaccess ) || ! is_writable( $htaccess ) ) {
-		return;
-	}
-
 	// insert_with_markers() APPENDS an empty "# BEGIN / # END" pair when the
 	// marker is not already in the file, so asking it to clear a block that
-	// isn't there would create one. No content between the markers means
-	// there is nothing to remove either way.
+	// isn't there would create one. extract_from_markers() returns an empty
+	// array for a missing file as well as a missing block, which covers both.
 	if ( array() === extract_from_markers( $htaccess, $marker ) ) {
 		return;
 	}
 
+	// A read-only .htaccess simply makes this return false; there is nothing
+	// useful to do about that here, and the settings screen reports it.
 	insert_with_markers( $htaccess, $marker, array() );
 }
 
@@ -370,6 +374,13 @@ add_action( 'template_redirect', 'maxsoft_rpdf_handle_request', 0 );
  * Handle the requests our .htaccess routes to index.php.
  */
 function maxsoft_rpdf_handle_request() {
+	// These query arguments are not form input: they are added by our own
+	// .htaccess rewrite of a public URL, so there is no nonce to verify and
+	// no state-changing action behind them. Access is decided by
+	// is_user_logged_in() below, and the path is validated against the
+	// uploads directory before anything is read.
+	// phpcs:disable WordPress.Security.NonceVerification.Recommended
+
 	// PDF.js viewer block: .htaccess only routes logged-out visitors here.
 	if ( isset( $_GET['maxsoft_rpdf_block'] ) && 'viewer' === sanitize_key( wp_unslash( $_GET['maxsoft_rpdf_block'] ) ) ) {
 		if ( ! is_user_logged_in() ) {
@@ -384,6 +395,7 @@ function maxsoft_rpdf_handle_request() {
 	}
 
 	$requested = urldecode( wp_unslash( $_GET['maxsoft_rpdf_serve'] ) ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- validated against the uploads dir below.
+	// phpcs:enable WordPress.Security.NonceVerification.Recommended
 
 	// Hard stop on bad input / traversal attempts.
 	if ( '' === $requested || false !== strpos( $requested, '..' ) || false !== strpos( $requested, "\0" ) ) {
@@ -487,9 +499,11 @@ function maxsoft_rpdf_stream_file( $path ) {
 		ob_end_clean();
 	}
 
-	// Don't let a large download hit the PHP time limit.
+	// Don't let a large download hit the PHP time limit. Streaming a multi-
+	// hundred-megabyte PDF can legitimately outlast max_execution_time, and
+	// the call is silenced because it is disabled outright on some hosts.
 	if ( function_exists( 'set_time_limit' ) ) {
-		@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		@set_time_limit( 0 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Squiz.PHP.DiscouragedFunctions.Discouraged
 	}
 
 	$size = filesize( $path );
@@ -674,7 +688,7 @@ function maxsoft_rpdf_settings_page() {
 	$type        = $settings['redirect_type'];
 	$viewer_on   = maxsoft_rpdf_is_pdfjs_viewer_active();
 	$htaccess    = maxsoft_rpdf_htaccess_path();
-	$htaccess_ok = maxsoft_rpdf_htaccess_is_writable();
+	$htaccess_ok = maxsoft_rpdf_htaccess_write_ok();
 	?>
 	<div class="wrap">
 		<h1><?php esc_html_e( 'MaXsoft Restrict PDF Access', 'maxsoft-restrict-pdf-access' ); ?></h1>
@@ -754,7 +768,7 @@ function maxsoft_rpdf_settings_page() {
 							<?php
 							wp_dropdown_pages(
 								array(
-									'name'              => MAXSOFT_RPDF_OPTION . '[redirect_page_id]',
+									'name'              => esc_attr( MAXSOFT_RPDF_OPTION ) . '[redirect_page_id]',
 									'selected'          => (int) $settings['redirect_page_id'],
 									'show_option_none'  => esc_html__( 'Select a page', 'maxsoft-restrict-pdf-access' ),
 									'option_none_value' => 0,

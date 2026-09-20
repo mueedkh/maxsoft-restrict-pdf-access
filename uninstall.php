@@ -16,6 +16,7 @@ if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) {
 function maxsoft_rpdf_uninstall_options() {
 	delete_option( 'maxsoft_rpdf_settings' );
 	delete_option( 'maxsoft_rpdf_version' );
+	delete_option( 'maxsoft_rpdf_htaccess_ok' );
 	delete_option( 'rpdf_settings' );
 }
 
@@ -30,14 +31,14 @@ if ( ! function_exists( 'insert_with_markers' ) ) {
 
 $maxsoft_rpdf_htaccess = get_home_path() . '.htaccess';
 
-if ( file_exists( $maxsoft_rpdf_htaccess ) && is_writable( $maxsoft_rpdf_htaccess ) ) {
-	foreach ( array( 'MaXsoft Restrict PDF Access', 'Restrict PDF' ) as $maxsoft_rpdf_marker ) {
-		// Deactivation normally clears the block before uninstall runs, and
-		// insert_with_markers() APPENDS an empty "# BEGIN / # END" pair when
-		// the marker is absent. Only clear a block that still has content.
-		if ( array() !== extract_from_markers( $maxsoft_rpdf_htaccess, $maxsoft_rpdf_marker ) ) {
-			insert_with_markers( $maxsoft_rpdf_htaccess, $maxsoft_rpdf_marker, array() );
-		}
+foreach ( array( 'MaXsoft Restrict PDF Access', 'Restrict PDF' ) as $maxsoft_rpdf_marker ) {
+	// Deactivation normally clears the block before uninstall runs, and
+	// insert_with_markers() APPENDS an empty "# BEGIN / # END" pair when the
+	// marker is absent. Only clear a block that still has content;
+	// extract_from_markers() also returns empty for a missing file. A
+	// read-only .htaccess just makes the write return false.
+	if ( array() !== extract_from_markers( $maxsoft_rpdf_htaccess, $maxsoft_rpdf_marker ) ) {
+		insert_with_markers( $maxsoft_rpdf_htaccess, $maxsoft_rpdf_marker, array() );
 	}
 }
 
